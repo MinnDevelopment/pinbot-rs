@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     let http = Client::new(token.clone());
     let (shard, mut events) = ShardBuilder::new(token.clone(), Intents::GUILD_MESSAGES)
         .shard(0, 1)?
-        .gateway_url("wss://gateway.discord.gg".to_string())
+        .gateway_url("wss://gateway.discord.gg".to_owned())
         .build();
 
     shard.start().await?;
@@ -92,7 +92,7 @@ fn guild_only() -> InteractionResponse {
         data: Some(InteractionResponseData {
             content: Some(
                 "You can't pin messages in a direct message channel. Try in a server instead!"
-                    .to_string(),
+                    .to_owned(),
             ),
             ..Default::default()
         }),
