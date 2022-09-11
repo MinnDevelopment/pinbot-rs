@@ -6,9 +6,10 @@ edition = "2021"
 [dependencies]
 twilight-http-ratelimiting = "0.13"
 twilight-http = "0.13"
-twilight-gateway = "0.13"
+# twilight-gateway = "0.13"
 twilight-model = "0.13"
 twilight-util = { default-features = false, features = ["builder"], version = "0.13" }
+twilight-gateway = { git = "https://github.com/MinnDevelopment/twilight", branch = "patch-reconnects" }
 # twilight-http-ratelimiting = { path = "../twilight/twilight-http-ratelimiting" }
 # twilight-http = { path = "../twilight/twilight-http" }
 # twilight-gateway = { path = "../twilight/twilight-gateway" }
