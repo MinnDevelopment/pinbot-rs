@@ -6,25 +6,32 @@ use tracing as log;
 use twilight_gateway::{shard::ShardBuilder, Event, Intents};
 use twilight_http::Client;
 use twilight_model::{
-    application::{
-        component::{button::ButtonStyle, ActionRow, Button, Component},
-        interaction::{application_command::CommandData, Interaction, InteractionData},
+    application::interaction::{application_command::CommandData, Interaction, InteractionData},
+    channel::message::{
+        component::{ActionRow, Button, ButtonStyle},
+        MessageType,
     },
-    channel::message::MessageType,
     http::interaction::{InteractionResponse, InteractionResponseData, InteractionResponseType},
 };
 
 macro_rules! row {
-    ($button:expr) => {
-        [Component::ActionRow(ActionRow {
-            components: vec![$button.into()],
-        })]
+    ($($component:expr),*) => {
+        [ActionRow {
+            components: vec![$($component.into(),)*]
+        }.into()]
     };
 }
 
-macro_rules! send {
-    ($request:expr) => {
-        $request.exec().await
+macro_rules! link {
+    ($label:expr, $url:expr) => {
+        Button {
+            style: ButtonStyle::Link,
+            url: Some($url),
+            custom_id: None,
+            disabled: false,
+            label: Some($label.to_owned()),
+            emoji: None,
+        }
     };
 }
 
@@ -38,8 +45,10 @@ async fn main() -> Result<()> {
     // Parse the config and setup logger
     tracing_subscriber::fmt::init();
 
-    let config = tokio::fs::read_to_string("config.json").await?;
-    let token = serde_json::from_str::<Config>(config.as_str())?.token;
+    let token = {
+        let config = tokio::fs::read_to_string("config.json").await?;
+        serde_json::from_str::<Config>(config.as_str())?.token
+    };
 
     // Setup http and gateway connection (as minimal as possible)
     let http = Client::new(token.clone());
@@ -50,27 +59,27 @@ async fn main() -> Result<()> {
 
     shard.start().await?;
 
-    let user = OnceCell::new();
+    let mut user_id = None;
     log::info!("Connection established. Listening for events...");
     while let Some(event) = events.next().await {
         match event {
             Event::Ready(ready) => {
-                user.get_or_init(|| async { ready.user.id }).await;
+                user_id = Some(ready.user.id);
             }
             Event::InteractionCreate(ref interaction) => {
                 if let Some(InteractionData::ApplicationCommand(ref data)) = interaction.data {
                     if let Err(e) = handle_command(interaction, data, &http).await {
-                        log::error!("Command failed: {}", e);
+                        log::error!("Command failed: {e}");
                     }
                 }
             }
             Event::MessageCreate(message) => {
                 // Delete the default "x pinned message" message in the channel, since we send our own!
-                if user.get() == Some(&message.author.id)
+                if user_id == Some(message.author.id)
                     && message.kind == MessageType::ChannelMessagePinned
                 {
-                    if let Err(e) = send! { http.delete_message(message.channel_id, message.id) } {
-                        log::error!("Failed to delete pin message: {}", e);
+                    if let Err(e) = http.delete_message(message.channel_id, message.id).await {
+                        log::error!("Failed to delete pin message: {e}");
                     }
                 }
             }
@@ -106,10 +115,8 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
     let client = http.interaction(event.application_id);
 
     // Only allow pinning in guilds
-    let guild_id = if let Some(id) = event.guild_id {
-        id
-    } else {
-        send! { client.create_response(event.id, &event.token, &guild_only()) }?;
+    let Some(guild_id) = event.guild_id else {
+        client.create_response(event.id, &event.token, &guild_only()).await?;
         return Ok(());
     };
 
@@ -128,35 +135,29 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
         .expect("Message command is missing resolved message!");
 
     // Acknowledge the interaction before doing anything else
-    send! { client.create_response(event.id, &event.token, &DEFER) }?;
+    client.create_response(event.id, &event.token, &DEFER).await?;
 
     // Pin or unpin the message
     let result = if pin {
-        send! { http.create_pin(channel_id, message.id) }
+        http.create_pin(channel_id, message.id).await
     } else {
-        send! { http.delete_pin(channel_id, message.id) }
+        http.delete_pin(channel_id, message.id).await
     };
 
-    let button = row! {
-        Button {
-            label: Some("Link".to_string()),
-            style: ButtonStyle::Link,
-            url: Some(format!(
-                "https://discord.com/channels/{}/{}/{}",
-                guild_id, channel_id, message.id
-            )),
-            custom_id: None,
-            disabled: false,
-            emoji: None,
-        }
-    };
+    let button = row!(link!(
+        "Message",
+        format!(
+            "https://discord.com/channels/{}/{}/{}",
+            guild_id, channel_id, message.id
+        )
+    ));
 
     let request = client.create_followup(&event.token);
 
     if let Err(e) = result {
         // Could happen if we are missing permissions
         log::error!("Failed to process pin due to error: {}", e);
-        send! { request.content("Encountered some error, sorry about that... Try again?")? }?;
+        request.content("Encountered some error, sorry about that... Try again?")?.await?;
     } else {
         // Send final response
         let content = format!(
@@ -166,7 +167,7 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
         );
 
         log::info!("[{}] {}", channel_id, content);
-        send! { request.components(&button)?.content(&content)? }?;
+        request.components(&button)?.content(&content)?.await?;
     }
 
     Ok(())
