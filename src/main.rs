@@ -1,7 +1,6 @@
 use anyhow::Result;
 use futures::StreamExt;
 use serde::Deserialize;
-use tokio::sync::OnceCell;
 use tracing as log;
 use twilight_gateway::{shard::ShardBuilder, Event, Intents};
 use twilight_http::Client;
@@ -135,7 +134,9 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
         .expect("Message command is missing resolved message!");
 
     // Acknowledge the interaction before doing anything else
-    client.create_response(event.id, &event.token, &DEFER).await?;
+    client
+        .create_response(event.id, &event.token, &DEFER)
+        .await?;
 
     // Pin or unpin the message
     let result = if pin {
@@ -157,7 +158,9 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
     if let Err(e) = result {
         // Could happen if we are missing permissions
         log::error!("Failed to process pin due to error: {}", e);
-        request.content("Encountered some error, sorry about that... Try again?")?.await?;
+        request
+            .content("Encountered some error, sorry about that... Try again?")?
+            .await?;
     } else {
         // Send final response
         let content = format!(
