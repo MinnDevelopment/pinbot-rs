@@ -1,3 +1,14 @@
+#![warn(
+    clippy::string_slice,
+    clippy::str_to_string,
+    clippy::inefficient_to_string,
+    clippy::manual_string_new,
+    clippy::map_unwrap_or,
+    clippy::needless_pass_by_value,
+    clippy::unused_self,
+    clippy::explicit_iter_loop
+)]
+
 use anyhow::Result;
 use futures::StreamExt;
 use serde::Deserialize;
@@ -181,9 +192,7 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
 #[allow(clippy::or_fun_call)]
 fn get_tag(event: &Interaction) -> String {
     event
-        .user
-        .as_ref()
-        .or(event.member.as_ref().and_then(|m| m.user.as_ref()))
-        .map(|user| format!("{}#{}", user.name, user.discriminator))
+        .author()
+        .map(|user| format!("{}#{}", user.name, user.discriminator()))
         .expect("Could not resolve user for event!")
 }
