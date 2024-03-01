@@ -8,7 +8,7 @@ on:
 jobs:
   linux:
     name: Artifact Linux (x64)
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     container:
       image: ubuntu:16.04
     steps:
@@ -28,7 +28,7 @@ jobs:
       - name: Build Artifact
         run: cargo build -r
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Linux x64
           path: target/release/pinbot-rs
@@ -47,7 +47,7 @@ jobs:
       - name: Build Artifact
         run: cargo build -r
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Windows x64
           path: target/release/pinbot-rs.exe
@@ -74,7 +74,7 @@ jobs:
         run:
           lipo -create -output pinbot-rs target/**/release/pinbot-rs
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: macOS universal
           path: pinbot-rs
