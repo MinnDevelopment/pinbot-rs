@@ -47,7 +47,7 @@ jobs:
       - name: Build Artifact
         run: cargo build -r
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Windows x64
           path: target/release/pinbot-rs.exe
@@ -66,11 +66,14 @@ jobs:
       - name: Build Artifact (x64)
         run: cargo build -r --target=x86_64-apple-darwin
       - name: Build Artifact (M1)
-        uses: actions/checkout@v4
+        run: |
           rustup target add aarch64-apple-darwin
-        uses: dtolnay/rust-toolchain@stable
+          cargo build -r --target=aarch64-apple-darwin
       - name: Combine Universal Darwin
-          targets: x86_64-apple-darwin
+        run:
+          lipo -create -output pinbot-rs target/**/release/pinbot-rs
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: macOS universal
           path: pinbot-rs
