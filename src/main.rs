@@ -10,11 +10,10 @@
 )]
 
 use anyhow::Result;
-use futures::StreamExt;
 use serde::Deserialize;
 use tracing as log;
-use twilight_gateway::{shard::ShardBuilder, Event, Intents};
-use twilight_http::Client;
+use twilight_gateway::{Event, Intents, Shard, ShardId};
+use twilight_http::{request::AuditLogReason, Client};
 use twilight_model::{
     application::interaction::{application_command::CommandData, Interaction, InteractionData},
     channel::message::{
@@ -62,16 +61,11 @@ async fn main() -> Result<()> {
 
     // Setup http and gateway connection (as minimal as possible)
     let http = Client::new(token.clone());
-    let (shard, mut events) = ShardBuilder::new(token.clone(), Intents::GUILD_MESSAGES)
-        .shard(0, 1)?
-        .gateway_url("wss://gateway.discord.gg".to_owned())
-        .build();
-
-    shard.start().await?;
+    let mut shard = Shard::new(ShardId::ONE, token.clone(), Intents::GUILD_MESSAGES);
 
     let mut user_id = None;
     log::info!("Connection established. Listening for events...");
-    while let Some(event) = events.next().await {
+    while let Ok(event) = shard.next_event().await {
         match event {
             Event::Ready(ready) => {
                 user_id = Some(ready.user.id);
@@ -120,13 +114,17 @@ fn guild_only() -> InteractionResponse {
 
 async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) -> Result<()> {
     let channel_id = event
-        .channel_id
+        .channel
+        .as_ref()
+        .map(|c| c.id)
         .expect("Message command must have a channel id");
     let client = http.interaction(event.application_id);
 
     // Only allow pinning in guilds
     let Some(guild_id) = event.guild_id else {
-        client.create_response(event.id, &event.token, &guild_only()).await?;
+        client
+            .create_response(event.id, &event.token, &guild_only())
+            .await?;
         return Ok(());
     };
 
@@ -149,11 +147,24 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
         .create_response(event.id, &event.token, &DEFER)
         .await?;
 
+    let channel_name: &str = event
+        .channel
+        .as_ref()
+        .and_then(|channel| channel.name.as_deref())
+        .unwrap_or("");
+    let username = &event.author().unwrap().name;
+
     // Pin or unpin the message
     let result = if pin {
-        http.create_pin(channel_id, message.id).await
+        http.create_pin(channel_id, message.id)
+            .reason(&format!("{username} pinned a message in {channel_name}"))
+            .unwrap()
+            .await
     } else {
-        http.delete_pin(channel_id, message.id).await
+        http.delete_pin(channel_id, message.id)
+            .reason(&format!("{username} unpinned a message in {channel_name}"))
+            .unwrap()
+            .await
     };
 
     let button = row!(link!(
@@ -176,7 +187,7 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
         // Send final response
         let content = format!(
             "\u{1F4CC} **{}** {}pinned message in this channel.",
-            get_tag(event),
+            username,
             if pin { "" } else { "un" }
         );
 
@@ -185,14 +196,4 @@ async fn handle_command(event: &Interaction, data: &CommandData, http: &Client) 
     }
 
     Ok(())
-}
-
-/// Gets the user tag as {name}#{discriminator} for an application command event
-#[inline]
-#[allow(clippy::or_fun_call)]
-fn get_tag(event: &Interaction) -> String {
-    event
-        .author()
-        .map(|user| format!("{}#{}", user.name, user.discriminator()))
-        .expect("Could not resolve user for event!")
 }
