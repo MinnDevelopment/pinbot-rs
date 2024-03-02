@@ -28,7 +28,7 @@ jobs:
       - name: Build Artifact
         run: cargo build -r
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: Linux x64
           path: target/release/pinbot-rs
