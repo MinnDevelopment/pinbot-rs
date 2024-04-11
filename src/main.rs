@@ -9,10 +9,15 @@
     clippy::explicit_iter_loop
 )]
 
+use std::error::Error;
+
 use anyhow::Result;
 use serde::Deserialize;
 use tracing as log;
-use twilight_gateway::{Event, Intents, Shard, ShardId};
+use twilight_gateway::{
+    error::{ReceiveMessageError, ReceiveMessageErrorType},
+    Event, Intents, Shard, ShardId,
+};
 use twilight_http::{request::AuditLogReason, Client};
 use twilight_model::{
     application::interaction::{application_command::CommandData, Interaction, InteractionData},
@@ -65,19 +70,20 @@ async fn main() -> Result<()> {
 
     let mut user_id = None;
     log::info!("Connection established. Listening for events...");
-    while let Ok(event) = shard.next_event().await {
-        match event {
-            Event::Ready(ready) => {
+    loop {
+        let result = shard.next_event().await;
+        match result {
+            Ok(Event::Ready(ready)) => {
                 user_id = Some(ready.user.id);
             }
-            Event::InteractionCreate(ref interaction) => {
+            Ok(Event::InteractionCreate(ref interaction)) => {
                 if let Some(InteractionData::ApplicationCommand(ref data)) = interaction.data {
                     if let Err(e) = handle_command(interaction, data, &http).await {
                         log::error!("Command failed: {e}");
                     }
                 }
             }
-            Event::MessageCreate(message) => {
+            Ok(Event::MessageCreate(message)) => {
                 // Delete the default "x pinned message" message in the channel, since we send our own!
                 if user_id == Some(message.author.id)
                     && message.kind == MessageType::ChannelMessagePinned
@@ -85,6 +91,12 @@ async fn main() -> Result<()> {
                     if let Err(e) = http.delete_message(message.channel_id, message.id).await {
                         log::error!("Failed to delete pin message: {e}");
                     }
+                }
+            }
+            Err(error) => {
+                log::error!(?error, "Error in event loop");
+                if error.is_fatal() {
+                    break;
                 }
             }
             _ => {}
