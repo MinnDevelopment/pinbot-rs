@@ -9,15 +9,10 @@
     clippy::explicit_iter_loop
 )]
 
-use std::error::Error;
-
 use anyhow::Result;
 use serde::Deserialize;
 use tracing as log;
-use twilight_gateway::{
-    error::{ReceiveMessageError, ReceiveMessageErrorType},
-    Event, Intents, Shard, ShardId,
-};
+use twilight_gateway::{Event, Intents, Shard, ShardId};
 use twilight_http::{request::AuditLogReason, Client};
 use twilight_model::{
     application::interaction::{application_command::CommandData, Interaction, InteractionData},
